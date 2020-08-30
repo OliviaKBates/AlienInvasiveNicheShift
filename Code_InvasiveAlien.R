@@ -26,6 +26,8 @@ library(tidyr)
 library(scales)
 library(reshape2)
 library(ggpubr)
+library(grDevices)
+library(extrafont)
 
 #### Load data
 rm(list = ls())
@@ -57,7 +59,7 @@ load("data_invasiveants.RData")
 ### Add climatic data
 #--> 
 path <- "C:/Users/Ollier/Desktop/CleoGroup/Data/Geomatic/Climatic/worldclim"
-r <- getData("worldclim", var = "bio", res = 2.5, path = path)
+r <- raster::getData("worldclim", var = "bio", res = 2.5, path = path)
 r <- r[[c(1, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)]]
 
 
@@ -124,8 +126,8 @@ col_N <- rgb(0,0,1,0.2) #native colours
   xlim <- range(dens_E$x, dens_N$x) #x axis range
   ylim <- range(0, dens_E$y, dens_N$y)
   ylim[2] <- ylim[2] + 0.1
-  hist(y_E, proba = T,  xlim = xlim, ylim = ylim, col= col_E, density = 10, angle = 135, main = species82[i], xlab = "Between-Class PCA 1", ylab = "Occurence", cex.lab=1.5, cex.axis=1.5)
-  hist(y_N, proba = T, add = T, col = col_N, density = 10, angle = 45)
+  hist(y_E, proba = T,  xlim = xlim, ylim = ylim, col= 'white', density = 10, angle = 135, main = species82[i], xlab = "Between-Class PCA 1", ylab = "Density", cex.lab=1.5, cex.axis=1.5)
+  hist(y_N, proba = T, add = T, col = 'white', density = 10, angle = 45)
   polygon(dens_E, density = -1, col = col_E)
   polygon(dens_N, density = -1, col = col_N)
   mat <- cbind(dens_E$x, dens_E$y)
@@ -149,13 +151,17 @@ col_N <- rgb(0,0,1,0.2) #native colours
 #### Extracting occurences and calculating Overlap Niche expansion and Equivilency Test
 niche_expansion_1 <- NULL
 sample_size_1 <- NULL 
+gridnumbers <- NULL
+par(mfrow=c(1,1))
+par(mar=c(5, 5, 5, 5))
 
 #--> we can store all the density graphs in a .pdf : do not hesitate to change the parameter if this solution is not as you want
-  pdf("niche_plots.pdf")	# save all the overlap graphs in one pdf file
+pdf("niche_plots.pdf")	# save all the overlap graphs in one pdf file
 for(i in 1:length(species82)){
   ### Exctracting occurences
   species <- antmaps_occ[[species82[i]]]
-
+  #species <- antmaps_occ[[species82[3]]]
+  
   ## native data
   Native <- species[which(species$status=='N'),]
   rownames(Native) <- 1:nrow(Native)
@@ -168,10 +174,17 @@ for(i in 1:length(species82)){
   N_thinned <- nrow(coords)
   index <- match(rownames(coords), rownames(Native))
   points <- SpatialPointsDataFrame(coords, data=Native[index,], proj4string = r@crs) #this converts the lat and longs into spatial data
-  values <- raster::extract(r,points) #extracts the bioclim data for the coodrinate points we have 
+  values <- raster::extract(r,points, cellnumbers=T) #extracts the bioclim data for the coodrinate points we have 
+  ## See how many points ecist within the same grid cell 
+  grid_N <- as.data.frame(table(values[,1]))
+  grid_N <- nrow( grid_N[grid_N$Var1[ grid_N$Freq > 1],])
+  
   status <- points$status
   Native_df <- cbind.data.frame(coordinates(points), status, values)  #binds the bioclim data 
+  Native_df <- Native_df[!duplicated(Native_df$cells),]
+  Native_df <- Native_df[,-4]
 
+  
   ## non-native data
   Exotic <- species[which(species$status=='E'),]
   rownames(Exotic) <- 1:nrow(Exotic)
@@ -183,9 +196,19 @@ for(i in 1:length(species82)){
   E_thinned <- nrow(coords)
   index <- match(rownames(coords), rownames(Exotic))
   points <- SpatialPointsDataFrame(coords, data=Exotic[index,], proj4string = r@crs) #this converts the lat and longs into spatial data
-  values <- raster::extract(r,points)
+  values <- raster::extract(r,points, cellnumbers=T)
+  ## See how many points ecist within the same grid cell 
+  grid_E <- as.data.frame(table(values[,1]))
+  grid_E <- nrow(grid_E[ grid_E$Var1[ grid_E$Freq > 1],])
+  spec_grid <- cbind(grid_N, grid_E, species82[i])
+  colnames(spec_grid) <- c('Grid_N', 'Grid_E', "Species")
+  gridnumbers <- rbind(gridnumbers, spec_grid)
+  
   status <- points$status
-  Exotic_df <- cbind.data.frame(coordinates(points), status, values) 
+  Exotic_df <- cbind.data.frame(coordinates(points), status, values)  #binds the bioclim data 
+  Exotic_df <-  Exotic_df[!duplicated(Exotic_df$cells),]
+  Exotic_df <-  Exotic_df[,-4]
+  
  
   ## save number of occurences
   sizes <- cbind( N_origional, N_thinned , E_origional, E_thinned )
@@ -258,6 +281,11 @@ for(i in 1:length(species82)){
 
   ## plot results
   map_overlap(bet1$ls[,1], status)
+  mypath3 <- file.path("overlap_graphs//",paste("density", species82[i], ".jpg", sep = "")) #path to save file 
+  dev.copy(png, file=mypath3,  width = 7.7, height = 6.5, units='in', res=500)
+  dev.off() #no more added to the file 
+  
+  
 }
   dev.off()
 
@@ -265,7 +293,7 @@ niche_expansion_1
 sample_size_1
 
 # the data frame to be used 
-	# niche_results <- niche_expansion_1
+	# niche_results <- niche_expansion_1[,1:5]
 	# sample_size <- sample_size_1
 
 
@@ -308,13 +336,13 @@ fac.group_1$species <- rownames(new)
 ####	####
 
 ### Get coordinates for the middle of each bentity
-#sp <- coordinates(w_rworldmap) #these are the centroids of this. This is a matrix of coordinates 
-#sp <- SpatialPoints(sp, proj4string = w_rworldmap@proj4string) #spatial points data frame by joining the coodinates to the attributes. 
-#spdf <- SpatialPointsDataFrame(sp, data=w_rworldmap@data, proj4string = w_rworldmap@proj4string ) #so this is specifying to use the same system as in the worldmap one
+sp <- coordinates(w_rworldmap) #these are the centroids of this. This is a matrix of coordinates 
+sp <- SpatialPoints(sp, proj4string = w_rworldmap@proj4string) #spatial points data frame by joining the coodinates to the attributes. 
+spdf <- SpatialPointsDataFrame(sp, data=w_rworldmap@data, proj4string = w_rworldmap@proj4string ) #so this is specifying to use the same system as in the worldmap one
 
-sp <- coordinates(map) #these are the centroids of this. This is a matrix of coordinates 
-sp <- SpatialPoints(sp, proj4string = map@proj4string) #spatial points data frame by joining the coodinates to the attributes. 
-spdf <- SpatialPointsDataFrame(sp, data=map@data, proj4string = map@proj4string ) #so this is specifying to use the same system as in the worldmap one
+#sp <- coordinates(map) #these are the centroids of this. This is a matrix of coordinates 
+#sp <- SpatialPoints(sp, proj4string = map@proj4string) #spatial points data frame by joining the coodinates to the attributes. 
+#spdf <- SpatialPointsDataFrame(sp, data=map@data, proj4string = map@proj4string ) #so this is specifying to use the same system as in the worldmap one
 
 nr <- ne <- NULL
 ns <- length(antmaps_distri)
@@ -386,28 +414,29 @@ rao_native <- divc(world2, quasieuclid(as.dist(dgeo)))
 
 #### Preparing the data
 ### Code getting the values for all the species 
-xy <- antmaps_occ[[species82[1]]][,c("lon", "lat")] #for the first species 
-speciesnames <- as.factor(species82)
+xy <- antmaps_occ[[1]][,c("lon", "lat")] #for the first species 
 species <- rep(speciesnames[1], nrow(xy))
-for(i in length(species82)){ #for every species appart from the first(which is already done)
-  local <- antmaps_occ[[species82[i]]][,c("lon", "lat")] #get the long and lats
+l <- lapply(antmaps_occ, nrow) # number of rows for each pccurance
+index <- which(!unlist(lapply(l, is.null))) # remove nulls 
+for(i in index[-1]){ #for every species appart from the first(which is already done)
+  local <- antmaps_occ[[i]][,c("lon", "lat")] #get the long and lats
   xy <- rbind.data.frame(xy, local) #bind them all together 
   species <- c(species, rep(speciesnames[i], nrow(local))) #get the species names as a list
 }
 df <- as.data.frame(as.factor(species))
 names(df) <- "species"
-spdf <- SpatialPointsDataFrame(xy, df, proj = CRS("+proj=longlat +datum=WGS84"))
+spdf <- SpatialPointsDataFrame(xy, df, proj = CRS(proj4string(r)))
 sf <- st_as_sf(spdf) # the points and species name. 
 
 ### Format the worldclim data 
 ## Crop the world to the extent of occurances
 e <- extent(sf) # this is the extent of ant occurances 
-x1 <- -180 ; x2 <- 180 ; y1 <- round(attributes(e)$ymin)-1 ; y2 = round(attributes(e)$ymax)+1 # keep the x's the same as normal but crop the lattitudes. 
+x1 <- -180 ; x2 <- 180 ; y1 <- round(attributes(e)$ymin)-5 ; y2 = round(attributes(e)$ymax)+5 # keep the x's the same as normal but crop the lattitudes. 
 worldclim_5_crop <- crop(r, extent(x1, x2, y1, y2)) # 
  
 ## Downsize resolution for faster computation
 worldclim_5_crop_agg <- aggregate(worldclim_5_crop, fact = 5, fun = mean)
-worldclim_5_tab <- values(worldclim_5_crop_agg)
+worldclim_5_tab <- values(worldclim_5_crop)
  
 # remove the nas
 local <- apply(is.na(worldclim_5_tab), 1, sum)
@@ -438,27 +467,26 @@ worldclim_5_tab$pca8[index] <- worldclim_25_pca$li$Axis8
 
 #### NON FIXED Bandwidth method - to calcluate optimum bandwidths
 speciesnames <- as.factor(species82)
-bandwidth_details <- NULL 
-volume <- NULL 
 for (i in 1:length(speciesnames)) {
-  ## extract the points for each species 
+  ##extract the points for each species 
   species <- antmaps_occ[[as.character(speciesnames[i])]]
-  ## seperate the distirbutions by native and exotic! (and then maybe by continant) 
+  ##seperate the distirbutions by native and exotic! (and then maybe by continant) 
   Native <- species[which(species$status=='N'),]
   rownames(Native) <- 1:nrow(Native)
   lat <- Native$lat 
   lon <- Native$lon
   coords <- data.frame(x=lon,y=lat) #creating a data frame of the latitudes and longitudes 
   N_origional <- nrow(coords)
-  ## function below uses  nndist to calculae distance ebtween two points
-  coords <- ecospat.occ.desaggregation(xy=coords, min.dist=0.02, by=NULL) ###assume same as worldclim  (arc rotations are the unit) so 0.5 is 1km
+  ##function below uses  nndist to calculae distance ebtween two points
+  coords<-ecospat.occ.desaggregation(xy=coords, min.dist=0.02, by=NULL) ###assume same as worldclim  (arc rotations are the unit) so 0.5 is 1km
   N_thinned <- nrow(coords)
   index <- match(rownames(coords), rownames(Native))
   points <- SpatialPointsDataFrame(coords, data=Native[index,], proj4string = r@crs) #this converts the lat and longs into spatial data
-  values <- raster::extract(worldclim_5_crop_agg, points, cellnumbers=T) #extracts the bioclim data for the coodrinate points we have 
+  values <- raster::extract(worldclim_5_crop, points, cellnumbers=T) #extracts the bioclim data for the coodrinate points we have 
   Native_df <- cbind.data.frame(coordinates(points),  values)  #binds the bioclim data 
-
-  # matches pca values to the occurance points 
+  #plot(r[[1]]) #just to check if the points plot as expected
+  
+  #matches pca values to the occurance points 
   Native_df <- Native_df[complete.cases(Native_df), ]
   index <- match(as.character(Native_df$cells), rownames(worldclim_5_tab))
   Native_df$pca1 <- worldclim_5_tab$pca1[index]
@@ -470,54 +498,60 @@ for (i in 1:length(speciesnames)) {
   Native_df$pca7 <- worldclim_5_tab$pca7[index]
   Native_df$pca8 <- worldclim_5_tab$pca8[index]
   
-  # make a hypervolume, as based on the same pca axis then it should be comparable between species 
-  # estimate bandwidth for each species, then use the highest one. 
-  # using the first 5 axis of the pca only 
+  #make a hypervolume, as based on the same pca axis then it should be comparable between species 
+  #estimate bandwidth for each species, then use the highest one. 
   hyper_world <- hypervolume_gaussian(Native_df[,21:25], chunk.size=500) #gaussian method is better as the box method is flat therefore has errors 
   
-  # dataset with badwidth details 
+  #dataset with badwidth details 
   bandwidth_sp <- hyper_world@Parameters$kde.bandwidth # this gives us the bandwidth. 
   bandwidth_sp <- as.data.frame(bandwidth_sp)
   bandwidth_sp <- t(bandwidth_sp)
   rownames(bandwidth_sp) <- as.character(speciesnames[i])
   bandwidth_details <- rbind(bandwidth_details, bandwidth_sp)
   
-  # dataset with the volume details 
+  #dataset with the volume details 
   volume_sp <- get_volume(hyper_world)
   volume_sp <- as.data.frame(volume_sp)
   rownames(volume_sp) <- as.character(speciesnames[i])
   volume <- rbind(volume, volume_sp)
 }
+######
 
-### Remove the outliers ! 
+#remove the outliers ! 
+library(outliers)
+bandwidth_details <- as.data.frame(bandwidth_details)
 while (grubbs.test(bandwidth_details$pca1)$p.value <0.05) {
   bandwidth_details$pca1[which(bandwidth_details$pca1==outlier(bandwidth_details$pca1))] <- NA
 }
-max(na.omit(bandwidth_details$pca1)) # 1.54
+max(na.omit(bandwidth_details$pca1)) # 1.56
 
 while (grubbs.test(bandwidth_details$pca2)$p.value <0.05) {
   bandwidth_details$pca2[which(bandwidth_details$pca2==outlier(bandwidth_details$pca2))] <- NA
 }
-max(na.omit(bandwidth_details$pca2)) # 1.99
+max(na.omit(bandwidth_details$pca2)) #  2.19
 
 while (grubbs.test(bandwidth_details$pca3)$p.value <0.05) {
   bandwidth_details$pca3[which(bandwidth_details$pca3==outlier(bandwidth_details$pca3))] <- NA
 }
-max(na.omit(bandwidth_details$pca3)) # 1.32
+max(na.omit(bandwidth_details$pca3)) # 1.5
 
 while (grubbs.test(bandwidth_details$pca4)$p.value <0.05) {
   bandwidth_details$pca4[which(bandwidth_details$pca4==outlier(bandwidth_details$pca4))] <- NA
 }
-max(na.omit(bandwidth_details$pca4)) # 0.61
+max(na.omit(bandwidth_details$pca4)) # 0.67
 
 while (grubbs.test(bandwidth_details$pca5)$p.value <0.05) {
   bandwidth_details$pca5[which(bandwidth_details$pca5==outlier(bandwidth_details$pca5))] <- NA
 }
-max(na.omit(bandwidth_details$pca5)) # 0.99
+max(na.omit(bandwidth_details$pca5)) #  1.05
 
+### ##
+##### #
+### FIXED BANDWIDTH METHOD 
+#### #
+### ##
+bwdths <- c(1.56, 2.19, 1.50, 0.67, 1.05)
 
-#### FIXED BANDWIDTH METHOD 
-bwdths <- c(1.54, 1.99, 1.32, 0.61, 0.99)
 ## using fixed bandwidth of =previous section
 #LOOPS Native
 bandwidth_details2 <- NULL 
@@ -537,11 +571,10 @@ for (i in 1:length(speciesnames)) {
   N_thinned <- nrow(coords)
   index <- match(rownames(coords), rownames(Native))
   points <- SpatialPointsDataFrame(coords, data=Native[index,], proj4string = r@crs) #this converts the lat and longs into spatial data
-  values <- raster::extract(worldclim_5_crop_agg, points, cellnumbers=T) #extracts the bioclim data for the coodrinate points we have 
+  values <- raster::extract(worldclim_5_crop, points, cellnumbers=T) #extracts the bioclim data for the coodrinate points we have 
   Native_df <- cbind.data.frame(coordinates(points),  values)  #binds the bioclim data 
   
   # matches pca values to the occurance points 
-  Native_df <- Native_df[complete.cases(Native_df), ]
   index <- match(as.character(Native_df$cells), rownames(worldclim_5_tab))
   Native_df$pca1 <- worldclim_5_tab$pca1[index]
   Native_df$pca2 <- worldclim_5_tab$pca2[index]
@@ -551,7 +584,7 @@ for (i in 1:length(speciesnames)) {
   Native_df$pca6 <- worldclim_5_tab$pca6[index]
   Native_df$pca7 <- worldclim_5_tab$pca7[index]
   Native_df$pca8 <- worldclim_5_tab$pca8[index]
-  
+  Native_df <- Native_df[complete.cases(Native_df[,21:25]), ]
   # make a hypervolume, as based on the same pca axis then it should be comparable between species 
   # estimate bandwidth for each species, then use the highest one. 
   hyper_world <- hypervolume_gaussian(Native_df[,21:25], chunk.size=500, kde.bandwidth=bwdths) #gaussian method is better as the box method is flat therefore has errors 
@@ -595,7 +628,7 @@ shapiro.test(niche_results$expansion) #significant - need to use non-paremetric 
 # mean and standard deviation
 sumstat <- niche_results %>%
 # Select and rename five variables 
-select(`D Overlap` = D.overlap,`Expansion (%)` = expansion,) %>%
+dplyr::select(`D Overlap` = D.overlap,`Expansion (%)` = expansion) %>%
 # Find the mean, st. dev., min, and max for each variable 
 summarise_each(funs(mean, sd, min, max, median)) %>%  # mean, st. dev., min, and max for each variable 
 # Move summary stats to columns
@@ -603,15 +636,22 @@ gather(key, value, everything()) %>%
 separate(key, into = c("variable", "stat"), sep = "_") %>%
 spread(stat, value) %>%
 # Set order of summary statistics 
-select(variable, median, mean, sd, min, max) %>%
+dplyr::select(variable, median, mean, sd, min, max) %>%
 # Round all numeric variables to one decimal point
 mutate_each(funs(round(., 2)), -variable)
 sumstat
 
-
+## Sample size mean and median
+sample_size <- as.data.frame(sample_size)
 sampletotal<- sample_size$N_origional + sample_size$E_origional
-mean(sampletotal)
-std.error(sampletotal)
+#mean(sampletotal)
+#std.error(sampletotal)
+median(sampletotal)
+min(sampletotal)
+max(sampletotal)
+
+#Equivilency data. As there are multiple species we are comparing between, need to adjust p-values
+niche_results$eq.testBH  <-    p.adjust(niche_results$eq.test ,     method = "BH")
 
 
 ####	####
@@ -686,8 +726,8 @@ kruskal.test(D.overlap ~ type, data = niche_results) # SIGNIFICANT
 boxA <- ggplot( niche_results , aes(x=type, y=D.overlap, fill=type)) +
  scale_fill_manual(values=c("#c3dfe0",  '#2b7570'), name='Expansion Groups', labels=c('Alien', 'Invasive')) +
  geom_boxplot(color='black', outlier.shape = NA) + 
- geom_jitter(shape=16, position=position_jitter(0.2), size=0.7) + 
- xlab('') +  ylab('D Overlap') + 
+ geom_jitter(shape=19, position=position_jitter(0.2), size=0.7) + 
+ xlab('') +  ylab('D overlap') + 
  theme_classic()  + 
  scale_x_discrete(breaks=c("A","I"),  labels=c("Alien", "Invasive")) + 
  theme(legend.position = 'none') + 
@@ -723,7 +763,7 @@ expansion_test_data <- rbind(expansion_test_data_inv, expansion_test_data_alien)
 expansion_test_data <- as.data.frame(expansion_test_data)
 
 ## Plot it (fig 2.B)
-colours <- c( '#A33722', 'gray83')
+colours <- c( 'coral3', 'gray83')
 supp.labs <- c('Alien', 'Invasive')
 names(supp.labs) <- c("A", "I")
 alienpieA <- ggplot(expansion_test_data, aes(x = "", y = perc, fill = V1)) +
@@ -775,9 +815,9 @@ pairwise.wilcox.test(groups82_comparison$D.overlap, as.factor(groups82_compariso
 ## Plot it (fig2.C)
 boxB <- ggplot(groups82_comparison , aes(x=as.factor(categories), y=D.overlap, fill=as.factor(categories))) +
  geom_boxplot(color='black', outlier.shape = NA) + 
- geom_jitter(shape=16, position=position_jitter(0.2), size=0.7) + 
+ geom_jitter(shape=19, position=position_jitter(0.2), size=0.7) + 
  scale_fill_manual(values=c("#A8DADC", '#028090', '#05668d'),name='Dispersion Groups', labels=c('Regional', 'Transcontinental', 'Global')) +
- xlab('') + ylab('D Overlap') + 
+ xlab('') + ylab('D overlap') + 
  theme_classic() + theme(legend.position='none') + 
  scale_x_discrete(breaks=c("2","3", "4"),  
  labels=c('Regional', 'Transcontinental', 'Global')) +
@@ -822,7 +862,7 @@ expansion_test_data_4 <- expansion_test_data_4 %>%
  expansion_test_data <- rbind(expansion_test_data_2, expansion_test_data_3, expansion_test_data_4)
          
 ## Plot it
-colours <- c('#A33722', 'grey')
+colours <- c( 'coral3', 'grey')
 supp.labs <- c('Regional', 'Transcontinental', 'Global')
 names(supp.labs) <- c("2", "3", "4")
 pieA.1 <- ggplot(expansion_test_data, aes(x = "", y = perc, fill = V1)) +
@@ -845,9 +885,10 @@ chisq.test(expansion_test)  ###Significant
 
 #### Figure 2
 Fig2 <- ggarrange(boxA, alienpieA, boxB, pieA.1, 
-                  labels = c("A", "B", 'C', 'D'),  font.label = list(size = 10, font='Arial'),
+                  labels = c("a", "b", 'c', 'd'),  font.label = list(size = 10, font='Arial'),
                   ncol = 2, nrow = 2, widths=c(1, 1.25))
-#ggsave(filename = "../Code/../../InvasiveVsAlien_shift_drafts/plot.pdf", Fig2, width=7, height= 5, dpi = 300, units = "in", device='png')
+ggsave(filename = "fig2.pdf", plot=Fig2, width=7.2, height= 5, units = "in", device='pdf')
+
 
 
 ####	####
@@ -871,7 +912,7 @@ box_rao <-  ggplot(niche_results , aes(x=expansion_sig, y=raodiversity_native, f
  geom_boxplot(color='black', outlier.shape = NA) + 
  geom_jitter(shape=16, position=position_jitter(0.1), size=0.7) + 
  scale_x_discrete(breaks=c("noexpansion","expansion"), labels=c('0-10% ', '10-100%')) +
- ylab('Native Spatial \nRao Diversity') + 
+ ylab('Native spatial \nRao diversity') + 
  xlab('Expansion (%)') + theme_classic() + theme(legend.position='none') + 
  theme(text = element_text(family = "Arial", size=10)) + 
  theme(axis.text.x=element_text(colour="black")) +
@@ -888,8 +929,8 @@ scat_rao <- ggscatter(niche_results, x = 'raodiversity_native', y = 'D.overlap',
  add = "reg.line", conf.int = TRUE, 
  cor.coef = TRUE, cor.method = "kendall", size=0.6, cor.coef.size=3.3, font.label=c(10, 'plain', 'black'), font.family='Arial') +
  theme(text = element_text(family = "Arial", size=10)) +
- xlab('Native Spatial Rao Diversity') +  ylab(expression("D Overlap"))  + 
- labs(color = "Percentage of \nNative Niche")
+ xlab('Native spatial Rao diversity') +  ylab(expression("D Overlap"))  + 
+ labs(color = "Percentage of \nnative niche")
 scat_rao     
      
                 
@@ -908,12 +949,12 @@ box_hyp <- ggplot(niche_results , aes(x=expansion_sig, y=volume_native_fixed, fi
  geom_boxplot(color='black', outlier.shape = NA) + 
  geom_jitter(shape=16, position=position_jitter(0.1), size=0.7) + 
  scale_x_discrete(breaks=c("noexpansion","expansion"),  labels=c('0-10%', '10-100%')) +
- ylab('Native Hypervolume') + 
+ ylab('Native hypervolume') + 
  xlab('Expansion (%)') + theme_classic() + theme(legend.position='none') + 
  theme(text = element_text(family = "Arial", size=10)) + 
  theme(axis.text.x=element_text(colour="black")) +
- annotate("text", x = 1.5, y =35900 , label = "**", size=4) +  
- geom_segment(aes(x = 1, y = 35000, xend = 2, yend = 35000), colour="black") 
+ annotate("text", x = 1.5, y =38000 , label = "***", size=4) +  
+ geom_segment(aes(x = 1, y = 37100, xend = 2, yend = 37100), colour="black") 
 box_hyp
          
 ### D overlap
@@ -926,14 +967,29 @@ scat_hyp <-ggscatter(niche_results, x = 'volume_native_fixed', y = 'D.overlap',
  cor.coef = TRUE, cor.method = "kendall", size=0.6, cor.coef.size=3.3, font.label=c(10, 'plain', 'black'), font.family='Arial') +
  scale_x_continuous(breaks = pretty(niche_results$volume_native_fixed, n = 3)) +
  theme(text = element_text(family = "Arial", size=10)) +
- xlab('Native Hypervolume') +  ylab(expression("D Overlap"))  + 
- labs(color = "Percentage of \nNative Niche")
+ xlab('Native hypervolume') +  ylab(expression("D Overlap"))  + 
+ labs(color = "Percentage of \nnative niche")
 scat_hyp       
          
+### Check if there is an effect of invasiveness on native characteristics 
+## IUCN invasivness
+kruskal.test(niche_results$raodiversity_native,  niche_results$type)
+kruskal.test(niche_results$volume_native_fixed,  niche_results$type)
+## Global spread 
+kruskal.test(niche_results$volume_native_fixed,  as.factor(niche_results$categories))
+
+kruskal.test(niche_results$raodiversity_native,  as.factor(niche_results$categories))
+
+dunn.test(niche_results$raodiversity_native,  as.factor(niche_results$categories), method='bonferroni')
+
+pairwise.wilcox.test(niche_results$raodiversity_native, as.factor(niche_results$categories), p.adjust.method="bonf") 
+pairwise.wilcox.test(niche_results$raodiversity_native, as.factor(niche_results$categories), p.adjust.method="BH") 
+
            
 #### Figure 3
 Fig3 <- ggarrange(box_rao, scat_rao, box_hyp, scat_hyp, 
-                   labels = c("A", "B", "C", "D"),  font.label = list(size = 10, font='Arial'),
+                   labels = c("a", "b", "c", "d"),  font.label = list(size = 10, font='Arial'),
                    ncol = 2, nrow = 2)
-#ggsave(filename = "../../../InvasiveVsAlien_shift_drafts/plot3_DE.png", Fig3, width=4.5, height= 4, dpi = 300, units = "in", device='png')
-
+#ggsave(filename = "plot3_DE.png", Fig3, width=4.5, height= 4, dpi = 300, units = "in", device='png')
+ggsave(filename = "Fig3.pdf", plot=Fig3, width=7, height= 5, units = "in", device='pdf')
+dev.off()
