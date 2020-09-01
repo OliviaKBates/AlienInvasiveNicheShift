@@ -436,7 +436,7 @@ worldclim_5_crop <- crop(r, extent(x1, x2, y1, y2)) #
  
 ## Downsize resolution for faster computation
 worldclim_5_crop_agg <- aggregate(worldclim_5_crop, fact = 5, fun = mean)
-worldclim_5_tab <- values(worldclim_5_crop)
+worldclim_5_tab <- values(worldclim_5_crop_agg)
  
 # remove the nas
 local <- apply(is.na(worldclim_5_tab), 1, sum)
@@ -467,6 +467,8 @@ worldclim_5_tab$pca8[index] <- worldclim_25_pca$li$Axis8
 
 #### NON FIXED Bandwidth method - to calcluate optimum bandwidths
 speciesnames <- as.factor(species82)
+bandwidth_details <- NULL 
+volume <- NULL 
 for (i in 1:length(speciesnames)) {
   ##extract the points for each species 
   species <- antmaps_occ[[as.character(speciesnames[i])]]
@@ -482,7 +484,7 @@ for (i in 1:length(speciesnames)) {
   N_thinned <- nrow(coords)
   index <- match(rownames(coords), rownames(Native))
   points <- SpatialPointsDataFrame(coords, data=Native[index,], proj4string = r@crs) #this converts the lat and longs into spatial data
-  values <- raster::extract(worldclim_5_crop, points, cellnumbers=T) #extracts the bioclim data for the coodrinate points we have 
+  values <- raster::extract(worldclim_5_crop_agg, points, cellnumbers=T) #extracts the bioclim data for the coodrinate points we have 
   Native_df <- cbind.data.frame(coordinates(points),  values)  #binds the bioclim data 
   #plot(r[[1]]) #just to check if the points plot as expected
   
@@ -523,17 +525,17 @@ bandwidth_details <- as.data.frame(bandwidth_details)
 while (grubbs.test(bandwidth_details$pca1)$p.value <0.05) {
   bandwidth_details$pca1[which(bandwidth_details$pca1==outlier(bandwidth_details$pca1))] <- NA
 }
-max(na.omit(bandwidth_details$pca1)) # 1.56
+max(na.omit(bandwidth_details$pca1)) # 1.52
 
 while (grubbs.test(bandwidth_details$pca2)$p.value <0.05) {
   bandwidth_details$pca2[which(bandwidth_details$pca2==outlier(bandwidth_details$pca2))] <- NA
 }
-max(na.omit(bandwidth_details$pca2)) #  2.19
+max(na.omit(bandwidth_details$pca2)) #  2.04
 
 while (grubbs.test(bandwidth_details$pca3)$p.value <0.05) {
   bandwidth_details$pca3[which(bandwidth_details$pca3==outlier(bandwidth_details$pca3))] <- NA
 }
-max(na.omit(bandwidth_details$pca3)) # 1.5
+max(na.omit(bandwidth_details$pca3)) # 1.28
 
 while (grubbs.test(bandwidth_details$pca4)$p.value <0.05) {
   bandwidth_details$pca4[which(bandwidth_details$pca4==outlier(bandwidth_details$pca4))] <- NA
@@ -543,14 +545,14 @@ max(na.omit(bandwidth_details$pca4)) # 0.67
 while (grubbs.test(bandwidth_details$pca5)$p.value <0.05) {
   bandwidth_details$pca5[which(bandwidth_details$pca5==outlier(bandwidth_details$pca5))] <- NA
 }
-max(na.omit(bandwidth_details$pca5)) #  1.05
+max(na.omit(bandwidth_details$pca5)) #  0.93
 
 ### ##
 ##### #
 ### FIXED BANDWIDTH METHOD 
 #### #
 ### ##
-bwdths <- c(1.56, 2.19, 1.50, 0.67, 1.05)
+bwdths <- c(1.26, 2.04, 1.28, 0.67, 0.93)
 
 ## using fixed bandwidth of =previous section
 #LOOPS Native
@@ -571,7 +573,7 @@ for (i in 1:length(speciesnames)) {
   N_thinned <- nrow(coords)
   index <- match(rownames(coords), rownames(Native))
   points <- SpatialPointsDataFrame(coords, data=Native[index,], proj4string = r@crs) #this converts the lat and longs into spatial data
-  values <- raster::extract(worldclim_5_crop, points, cellnumbers=T) #extracts the bioclim data for the coodrinate points we have 
+  values <- raster::extract(worldclim_5_crop_agg, points, cellnumbers=T) #extracts the bioclim data for the coodrinate points we have 
   Native_df <- cbind.data.frame(coordinates(points),  values)  #binds the bioclim data 
   
   # matches pca values to the occurance points 
@@ -887,7 +889,7 @@ chisq.test(expansion_test)  ###Significant
 Fig2 <- ggarrange(boxA, alienpieA, boxB, pieA.1, 
                   labels = c("a", "b", 'c', 'd'),  font.label = list(size = 10, font='Arial'),
                   ncol = 2, nrow = 2, widths=c(1, 1.25))
-ggsave(filename = "fig2.pdf", plot=Fig2, width=7.2, height= 5, units = "in", device='pdf')
+#ggsave(filename = "fig2.pdf", plot=Fig2, width=7.2, height= 5, units = "in", device='pdf')
 
 
 
@@ -979,17 +981,12 @@ kruskal.test(niche_results$volume_native_fixed,  niche_results$type)
 kruskal.test(niche_results$volume_native_fixed,  as.factor(niche_results$categories))
 
 kruskal.test(niche_results$raodiversity_native,  as.factor(niche_results$categories))
-
 dunn.test(niche_results$raodiversity_native,  as.factor(niche_results$categories), method='bonferroni')
 
-pairwise.wilcox.test(niche_results$raodiversity_native, as.factor(niche_results$categories), p.adjust.method="bonf") 
-pairwise.wilcox.test(niche_results$raodiversity_native, as.factor(niche_results$categories), p.adjust.method="BH") 
-
-           
 #### Figure 3
 Fig3 <- ggarrange(box_rao, scat_rao, box_hyp, scat_hyp, 
                    labels = c("a", "b", "c", "d"),  font.label = list(size = 10, font='Arial'),
                    ncol = 2, nrow = 2)
 #ggsave(filename = "plot3_DE.png", Fig3, width=4.5, height= 4, dpi = 300, units = "in", device='png')
-ggsave(filename = "Fig3.pdf", plot=Fig3, width=7, height= 5, units = "in", device='pdf')
+ggsave(filename = "Fig3.pdf", plot=Fig3, width=5.5, height= 5, units = "in", device='pdf')
 dev.off()
